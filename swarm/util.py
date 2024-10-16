@@ -1,5 +1,6 @@
 import inspect
 from datetime import datetime
+from typing import get_type_hints
 
 
 def debug_print(debug: bool, *args: str) -> None:
@@ -50,6 +51,26 @@ def function_to_json(func) -> dict:
         type(None): "null",
     }
 
+    def get_type_name(annotation):
+        """Helper function to map Python types to JSON schema types."""
+        if hasattr(annotation, '__origin__') and annotation.__origin__ is list:
+            return "array"
+        elif hasattr(annotation, '__annotations__'):
+            # Recursively handle class objects
+            return convert_class_to_json(annotation)
+        return type_map.get(annotation, "string")
+
+    def convert_class_to_json(cls) -> dict:
+        """Convert a class's attributes to a JSON-schema-like dictionary."""
+        class_hints = get_type_hints(cls)
+        properties = {}
+        for attr, attr_type in class_hints.items():
+            properties[attr] = {"type": get_type_name(attr_type)}
+        return {
+            "type": "object",
+            "properties": properties,
+        }
+
     try:
         signature = inspect.signature(func)
     except ValueError as e:
@@ -59,13 +80,8 @@ def function_to_json(func) -> dict:
 
     parameters = {}
     for param in signature.parameters.values():
-        try:
-            param_type = type_map.get(param.annotation, "string")
-        except KeyError as e:
-            raise KeyError(
-                f"Unknown type annotation {param.annotation} for parameter {param.name}: {str(e)}"
-            )
-        parameters[param.name] = {"type": param_type}
+        param_type = get_type_hints(func).get(param.name, str)
+        parameters[param.name] = {"type": get_type_name(param_type)}
 
     required = [
         param.name
@@ -85,3 +101,4 @@ def function_to_json(func) -> dict:
             },
         },
     }
+
